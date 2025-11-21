@@ -1,6 +1,8 @@
 package com.aryandi.di
 
 import com.aryandi.data.network.ApiService
+import com.aryandi.data.repository.NewsRepository
+import com.aryandi.data.repository.NewsRepositoryImpl
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -25,5 +27,11 @@ object AppModule {
     @Singleton
     fun provideApiService(retrofit: Retrofit): ApiService {
         return retrofit.create(ApiService::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideNewsRepository(apiService: ApiService): NewsRepository {
+        return NewsRepositoryImpl(apiService)
     }
 }
