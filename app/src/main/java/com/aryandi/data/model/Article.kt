@@ -1,6 +1,6 @@
 package com.aryandi.data.model
 
-data class Articles(
+data class Article(
     var source: Source? = Source(),
     var author: String? = null,
     var title: String? = null,

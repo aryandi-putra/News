@@ -1,4 +1,4 @@
-package com.aryandi.news.ui.newlist
+package com.aryandi.news.ui.news
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,7 +33,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.transform.RoundedCornersTransformation
-import com.aryandi.data.model.Articles
+import com.aryandi.data.model.Article
 import com.aryandi.data.network.ApiResponse
 
 @Composable
@@ -48,7 +48,7 @@ fun NewsListScreen(viewModel: NewsListViewModel= hiltViewModel()) {
             is ApiResponse.Success -> {
                 LazyColumn(contentPadding = padding) {
                     items(
-                        (newsList as? ApiResponse.Success<List<Articles>>)?.data ?: emptyList()
+                        (newsList as? ApiResponse.Success<List<Article>>)?.data ?: emptyList()
                     ) { news ->
                         news.NewsListItem()
                     }
@@ -82,7 +82,7 @@ fun LoadStatusText(modifier: Modifier, message: String) {
 }
 
 @Composable
-fun Articles.NewsListItem() {
+fun Article.NewsListItem() {
     Card(modifier = Modifier.padding(16.dp)) {
         Column(
             modifier = Modifier

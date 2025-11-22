@@ -1,9 +1,9 @@
-package com.aryandi.news.ui.newlist
+package com.aryandi.news.ui.news
 
 import androidx.compose.runtime.Stable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.aryandi.data.model.Articles
+import com.aryandi.data.model.Article
 import com.aryandi.data.network.ApiResponse
 import com.aryandi.data.repository.NewsRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,7 +16,7 @@ import javax.inject.Inject
 @HiltViewModel
 class NewsListViewModel @Inject constructor(private val newsRepository: NewsRepository) :
     ViewModel() {
-    private val _newsList = MutableStateFlow<ApiResponse<List<Articles>>>(ApiResponse.Loading)
+    private val _newsList = MutableStateFlow<ApiResponse<List<Article>>>(ApiResponse.Loading)
     val newsList = _newsList.asStateFlow()
 
     init {
