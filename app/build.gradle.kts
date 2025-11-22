@@ -24,10 +24,10 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("String", "TOKEN_KEY", "\"ADD_TOKEN_HERE\"")
+            buildConfigField("String", "TOKEN_KEY", "\"bfb6acbc96c84831bcc77047797c87f3\"")
         }
         release {
-            buildConfigField("String", "TOKEN_KEY", "\"ADD_TOKEN_HERE\"")
+            buildConfigField("String", "TOKEN_KEY", "\"bfb6acbc96c84831bcc77047797c87f3\"")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -60,6 +60,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.volley)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -76,8 +77,11 @@ dependencies {
     implementation (libs.kotlinx.coroutines.core)
 
     implementation (libs.hilt.android)
+    implementation(libs.hilt.compose)
     kapt (libs.hilt.android.compiler)
 
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.mockk)
+
+    implementation(libs.coil)
 }
