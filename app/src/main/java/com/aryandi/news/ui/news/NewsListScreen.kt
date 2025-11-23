@@ -19,9 +19,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,11 +62,12 @@ fun NewsListScreen(viewModel: NewsListViewModel = hiltViewModel()) {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            val data = result.data
         }
     }
 
     val newsList by viewModel.newsList.collectAsState()
+    val filteredNewsList by viewModel.filteredNewsList.collectAsState()
+    val searchKeyword by viewModel.searchKeyword.collectAsState()
     val listState = rememberLazyListState()
 
     val isAtBottom by remember {
@@ -87,50 +94,86 @@ fun NewsListScreen(viewModel: NewsListViewModel = hiltViewModel()) {
         contentWindowInsets = WindowInsets.systemBars,
         modifier = Modifier.fillMaxSize(),
     ) { padding ->
-        val currentData = (newsList as? ApiResponse.Success)?.data
+        val currentData = (filteredNewsList as? ApiResponse.Success)?.data
             ?: emptyList()
 
-        if (currentData.isNotEmpty()) {
-            LazyColumn(
-                state = listState,
-                contentPadding = padding
-            ) {
-                items(currentData) { article ->
-                    article.NewsListItem(onItemClick = { url ->
-                        val intent = Intent(context, NewsDetailActivity::class.java).apply {
-                            putExtra(EXTRA_URL_KEY, url)
+        Column(modifier = Modifier.padding(padding)) {
+            // Search field
+            OutlinedTextField(
+                value = searchKeyword,
+                onValueChange = { viewModel.updateSearchKeyword(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Search news by keyword...") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search"
+                    )
+                },
+                trailingIcon = {
+                    if (searchKeyword.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.updateSearchKeyword("") }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear"
+                            )
                         }
-                        launcher.launch(intent)
-                    })
-                }
+                    }
+                },
+                singleLine = true
+            )
 
-                item {
-                    if (newsList is ApiResponse.Loading && currentData.isNotEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator()
+            if (currentData.isNotEmpty()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(currentData) { article ->
+                        article.NewsListItem(onItemClick = { url ->
+                            val intent = Intent(context, NewsDetailActivity::class.java).apply {
+                                putExtra(EXTRA_URL_KEY, url)
+                            }
+                            launcher.launch(intent)
+                        })
+                    }
+
+                    item {
+                        if (newsList is ApiResponse.Loading && currentData.isNotEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator()
+                            }
                         }
                     }
                 }
-            }
-        } else {
-            when (newsList) {
-                is ApiResponse.Loading -> {
-                    LoadStatusText(modifier = Modifier.padding(padding), "Loading sources..")
-                }
+            } else {
+                when (filteredNewsList) {
+                    is ApiResponse.Loading -> {
+                        LoadStatusText(modifier = Modifier, "Loading sources..")
+                    }
 
-                is ApiResponse.Error -> {
-                    LoadStatusText(
-                        modifier = Modifier.padding(padding),
-                        "Error loading data: ${(newsList as? ApiResponse.Error)?.message ?: "Unknown Error"}"
-                    )
-                }
+                    is ApiResponse.Error -> {
+                        LoadStatusText(
+                            modifier = Modifier,
+                            "Error loading data: ${(filteredNewsList as? ApiResponse.Error)?.message ?: "Unknown Error"}"
+                        )
+                    }
 
-                else -> {}
+                    else -> {
+                        if (searchKeyword.isNotEmpty()) {
+                            LoadStatusText(
+                                modifier = Modifier,
+                                "No results found for \"$searchKeyword\""
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -138,7 +181,8 @@ fun NewsListScreen(viewModel: NewsListViewModel = hiltViewModel()) {
 
 @Composable
 fun Article.NewsListItem(onItemClick: (String) -> Unit) {
-    Card(modifier = Modifier.padding(16.dp)
+    Card(modifier = Modifier
+        .padding(16.dp)
         .clickable { onItemClick(url ?: "") }) {
         Column(
             modifier = Modifier

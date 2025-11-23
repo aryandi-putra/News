@@ -20,10 +20,17 @@ const val EXTRA_SOURCE_KEY = "EXTRA_SOURCE"
 @HiltViewModel
 class NewsListViewModel @Inject constructor(
     private val newsRepository: NewsRepository,
-    private val savedStateHandle: SavedStateHandle
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val _newsList = MutableStateFlow<ApiResponse<List<Article>>>(ApiResponse.Loading)
     val newsList = _newsList.asStateFlow()
+
+    private val _searchKeyword = MutableStateFlow("")
+    val searchKeyword = _searchKeyword.asStateFlow()
+
+    private val _filteredNewsList =
+        MutableStateFlow<ApiResponse<List<Article>>>(ApiResponse.Loading)
+    val filteredNewsList = _filteredNewsList.asStateFlow()
 
     private var currentPage = 1
     private var isLastPage = false
@@ -36,6 +43,44 @@ class NewsListViewModel @Inject constructor(
             currentSource = source
             fetchNewsList(source = source, isFirstLoad = true)
         }
+
+        viewModelScope.launch {
+            _newsList.collect { apiResponse ->
+                applyFilter(apiResponse)
+            }
+        }
+    }
+
+    fun updateSearchKeyword(keyword: String) {
+        _searchKeyword.value = keyword
+        applyFilter(_newsList.value)
+    }
+
+    private fun applyFilter(apiResponse: ApiResponse<List<Article>>) {
+        when (apiResponse) {
+            is ApiResponse.Success -> {
+                val keyword = _searchKeyword.value.trim()
+                if (keyword.isEmpty()) {
+                    _filteredNewsList.value = apiResponse
+                } else {
+                    val filtered = apiResponse.data.filter { article ->
+                        article.title?.contains(keyword, ignoreCase = true) == true ||
+                                article.description?.contains(keyword, ignoreCase = true) == true ||
+                                article.author?.contains(keyword, ignoreCase = true) == true ||
+                                article.content?.contains(keyword, ignoreCase = true) == true
+                    }
+                    _filteredNewsList.value = ApiResponse.Success(filtered)
+                }
+            }
+
+            is ApiResponse.Error -> {
+                _filteredNewsList.value = apiResponse
+            }
+
+            is ApiResponse.Loading -> {
+                _filteredNewsList.value = apiResponse
+            }
+        }
     }
 
     fun loadMoreSources() {
@@ -44,7 +89,6 @@ class NewsListViewModel @Inject constructor(
             fetchNewsList(source, isFirstLoad = false)
         }
     }
-
 
     private fun fetchNewsList(source: String, isFirstLoad: Boolean) {
         viewModelScope.launch {

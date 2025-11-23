@@ -16,8 +16,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -42,40 +48,80 @@ fun SourceListScreen(viewModel: SourceListViewModel = hiltViewModel()) {
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK) {
-            val data = result.data
         }
     }
 
-    val sourceList by viewModel.sourceList.collectAsState()
+    val filteredSourceList by viewModel.filteredSourceList.collectAsState()
+    val searchKeyword by viewModel.searchKeyword.collectAsState()
+
     Scaffold(
         contentWindowInsets = WindowInsets.systemBars,
         modifier = Modifier.fillMaxSize(),
     ) { padding ->
-        when (sourceList) {
-            is ApiResponse.Success -> {
-                LazyColumn(contentPadding = padding) {
-                    items(
-                        (sourceList as? ApiResponse.Success<List<Source>>)?.data ?: emptyList()
-                    ) { source ->
-                        source.SourceListItem(onItemClick = { id ->
-                            val intent = Intent(context, NewsListActivity::class.java).apply {
-                                putExtra(EXTRA_SOURCE_KEY, id)
-                            }
-                            launcher.launch(intent)
-                        })
+        Column(modifier = Modifier.padding(padding)) {
+            // Search field
+            OutlinedTextField(
+                value = searchKeyword,
+                onValueChange = { viewModel.updateSearchKeyword(it) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                placeholder = { Text("Search sources by keyword...") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Search"
+                    )
+                },
+                trailingIcon = {
+                    if (searchKeyword.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.updateSearchKeyword("") }) {
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Clear"
+                            )
+                        }
+                    }
+                },
+                singleLine = true
+            )
+
+            val currentData =
+                (filteredSourceList as? ApiResponse.Success<List<Source>>)?.data ?: emptyList()
+
+            when {
+                currentData.isNotEmpty() -> {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(currentData) { source ->
+                            source.SourceListItem(onItemClick = { id ->
+                                val intent = Intent(context, NewsListActivity::class.java).apply {
+                                    putExtra(EXTRA_SOURCE_KEY, id)
+                                }
+                                launcher.launch(intent)
+                            })
+                        }
                     }
                 }
-            }
 
-            is ApiResponse.Error -> {
-                LoadStatusText(
-                    modifier = Modifier.padding(padding),
-                    "Error loading data: ${(sourceList as? ApiResponse.Error)?.message ?: "Unknown Error"}"
-                )
-            }
+                filteredSourceList is ApiResponse.Loading -> {
+                    LoadStatusText(modifier = Modifier, "Loading sources..")
+                }
 
-            is ApiResponse.Loading -> {
-                LoadStatusText(modifier = Modifier.padding(padding), "Loading news..")
+                filteredSourceList is ApiResponse.Error -> {
+                    LoadStatusText(
+                        modifier = Modifier,
+                        "Error loading data: ${(filteredSourceList as? ApiResponse.Error)?.message ?: "Unknown Error"}"
+                    )
+                }
+
+                else -> {
+                    if (searchKeyword.isNotEmpty()) {
+                        LoadStatusText(
+                            modifier = Modifier,
+                            "No sources found for \"$searchKeyword\""
+                        )
+                    }
+                }
             }
         }
     }
