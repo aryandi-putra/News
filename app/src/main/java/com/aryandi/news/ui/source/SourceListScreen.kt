@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -18,8 +19,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,13 +35,13 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.aryandi.data.model.Source
 import com.aryandi.data.network.ApiResponse
-import com.aryandi.news.ui.LoadStatusText
 import com.aryandi.news.ui.news.EXTRA_SOURCE_KEY
 import com.aryandi.news.ui.news.NewsListActivity
 
@@ -104,21 +108,42 @@ fun SourceListScreen(viewModel: SourceListViewModel = hiltViewModel()) {
                 }
 
                 filteredSourceList is ApiResponse.Loading -> {
-                    LoadStatusText(modifier = Modifier, "Loading sources..")
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator()
+                            Spacer(Modifier.height(16.dp))
+                            Text("Loading sources...")
+                        }
+                    }
                 }
 
                 filteredSourceList is ApiResponse.Error -> {
-                    LoadStatusText(
-                        modifier = Modifier,
-                        "Error loading data: ${(filteredSourceList as? ApiResponse.Error)?.message ?: "Unknown Error"}"
+                    SourceErrorScreen(
+                        errorMessage = (filteredSourceList as ApiResponse.Error).message,
+                        onRetry = { viewModel.retryLoad() }
+                    )
+                }
+
+                filteredSourceList is ApiResponse.Empty -> {
+                    SourceEmptyStateScreen(
+                        message = if (searchKeyword.isNotEmpty()) {
+                            "No sources found for \"$searchKeyword\""
+                        } else {
+                            "No sources available at the moment"
+                        }
                     )
                 }
 
                 else -> {
                     if (searchKeyword.isNotEmpty()) {
-                        LoadStatusText(
-                            modifier = Modifier,
-                            "No sources found for \"$searchKeyword\""
+                        SourceEmptyStateScreen(
+                            message = "No sources found for \"$searchKeyword\""
                         )
                     }
                 }
@@ -128,6 +153,80 @@ fun SourceListScreen(viewModel: SourceListViewModel = hiltViewModel()) {
 }
 
 
+
+@Composable
+fun SourceEmptyStateScreen(message: String) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Text(
+                text = "📋",
+                style = MaterialTheme.typography.displayLarge
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.Gray
+            )
+        }
+    }
+}
+
+@Composable
+fun SourceErrorScreen(
+    errorMessage: String,
+    onRetry: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Error",
+                modifier = Modifier.height(64.dp),
+                tint = Color.Gray
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Failed to Load",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = errorMessage,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Spacer(Modifier.height(24.dp))
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.fillMaxWidth(0.6f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Retry"
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("Retry")
+            }
+        }
+    }
+}
 
 @Composable
 fun Source.SourceListItem(onItemClick: (String) -> Unit) {

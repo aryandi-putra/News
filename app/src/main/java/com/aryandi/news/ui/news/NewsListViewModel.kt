@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.collections.plus
 
 const val EXTRA_SOURCE_KEY = "EXTRA_SOURCE"
 
@@ -32,10 +31,14 @@ class NewsListViewModel @Inject constructor(
         MutableStateFlow<ApiResponse<List<Article>>>(ApiResponse.Loading)
     val filteredNewsList = _filteredNewsList.asStateFlow()
 
+    private val _paginationError = MutableStateFlow<String?>(null)
+    val paginationError = _paginationError.asStateFlow()
+
     private var currentPage = 1
     private var isLastPage = false
     private var isLoadingMore = false
     private var currentSource: String? = null
+    private var lastFailedPage: Int? = null
 
     init {
         val source = savedStateHandle.get<String>(EXTRA_SOURCE_KEY)
@@ -80,6 +83,10 @@ class NewsListViewModel @Inject constructor(
             is ApiResponse.Loading -> {
                 _filteredNewsList.value = apiResponse
             }
+
+            ApiResponse.Empty -> {
+                _filteredNewsList.value = apiResponse
+            }
         }
     }
 
@@ -88,6 +95,30 @@ class NewsListViewModel @Inject constructor(
         if (!isLoadingMore && !isLastPage) {
             fetchNewsList(source, isFirstLoad = false)
         }
+    }
+
+    fun retryInitialLoad() {
+        val source = currentSource ?: return
+        currentPage = 1
+        isLastPage = false
+        lastFailedPage = null
+        fetchNewsList(source, isFirstLoad = true)
+    }
+
+    fun retryPagination() {
+        val source = currentSource ?: return
+        val failedPage = lastFailedPage ?: return
+        if (!isLoadingMore) {
+            currentPage = failedPage
+            lastFailedPage = null
+            _paginationError.value = null
+            fetchNewsList(source, isFirstLoad = false)
+        }
+    }
+
+    fun dismissPaginationError() {
+        _paginationError.value = null
+        lastFailedPage = null
     }
 
     private fun fetchNewsList(source: String, isFirstLoad: Boolean) {
@@ -122,10 +153,16 @@ class NewsListViewModel @Inject constructor(
                             if (isFirstLoad) {
                                 _newsList.value = response
                             } else {
+                                // Store the failed page for retry
+                                lastFailedPage = currentPage
+                                _paginationError.value = response.message
                             }
                         }
 
                         is ApiResponse.Loading -> {
+                        }
+
+                        ApiResponse.Empty -> {
                         }
                     }
                     isLoadingMore = false

@@ -45,7 +45,7 @@ class NewsRepositoryImplTest {
         coEvery { apiService.getSources("general") } returns (getSourcesEmptyData())
         val response = repository.getSourceList("general")
         assertEquals(
-            ApiResponse.Error("No sources available now, please check after a while!"), response.last()
+            ApiResponse.Empty, response.last()
         )
     }
 
@@ -59,7 +59,7 @@ class NewsRepositoryImplTest {
         } returns (getNewsEmptyData())
         val response = repository.getNewsList(source = "abc-news", currentPage = 1)
         assertEquals(
-            ApiResponse.Error("No news available now, please check after a while!"), response.last()
+            ApiResponse.Empty, response.last()
         )
     }
 

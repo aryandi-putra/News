@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,20 +16,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,7 +58,6 @@ import coil.request.ImageRequest
 import coil.transform.RoundedCornersTransformation
 import com.aryandi.data.model.Article
 import com.aryandi.data.network.ApiResponse
-import com.aryandi.news.ui.LoadStatusText
 import com.aryandi.news.ui.newsdetail.EXTRA_URL_KEY
 import com.aryandi.news.ui.newsdetail.NewsDetailActivity
 
@@ -68,7 +74,9 @@ fun NewsListScreen(viewModel: NewsListViewModel = hiltViewModel()) {
     val newsList by viewModel.newsList.collectAsState()
     val filteredNewsList by viewModel.filteredNewsList.collectAsState()
     val searchKeyword by viewModel.searchKeyword.collectAsState()
+    val paginationError by viewModel.paginationError.collectAsState()
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val isAtBottom by remember {
         derivedStateOf {
@@ -93,9 +101,8 @@ fun NewsListScreen(viewModel: NewsListViewModel = hiltViewModel()) {
     Scaffold(
         contentWindowInsets = WindowInsets.systemBars,
         modifier = Modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        val currentData = (filteredNewsList as? ApiResponse.Success)?.data
-            ?: emptyList()
 
         Column(modifier = Modifier.padding(padding)) {
             // Search field
@@ -125,54 +132,235 @@ fun NewsListScreen(viewModel: NewsListViewModel = hiltViewModel()) {
                 singleLine = true
             )
 
-            if (currentData.isNotEmpty()) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    items(currentData) { article ->
-                        article.NewsListItem(onItemClick = { url ->
-                            val intent = Intent(context, NewsDetailActivity::class.java).apply {
-                                putExtra(EXTRA_URL_KEY, url)
-                            }
-                            launcher.launch(intent)
-                        })
-                    }
+            val currentData = (filteredNewsList as? ApiResponse.Success)?.data
+                ?: emptyList()
 
-                    item {
-                        if (newsList is ApiResponse.Loading && currentData.isNotEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator()
+            when {
+                currentData.isNotEmpty() -> {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(currentData) { article ->
+                            article.NewsListItem(onItemClick = { url ->
+                                val intent = Intent(context, NewsDetailActivity::class.java).apply {
+                                    putExtra(EXTRA_URL_KEY, url)
+                                }
+                                launcher.launch(intent)
+                            })
+                        }
+            
+                        item {
+                            when {
+                                newsList is ApiResponse.Loading && currentData.isNotEmpty() -> {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator()
+                                    }
+                                }
+
+                                paginationError != null -> {
+                                    PaginationErrorItem(
+                                        errorMessage = paginationError ?: "Unknown error",
+                                        onRetry = { viewModel.retryPagination() },
+                                        onDismiss = { viewModel.dismissPaginationError() }
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            } else {
-                when (filteredNewsList) {
-                    is ApiResponse.Loading -> {
-                        LoadStatusText(modifier = Modifier, "Loading sources..")
-                    }
+                else -> {
+                    when (filteredNewsList) {
+                        is ApiResponse.Loading -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator()
+                                    Spacer(Modifier.height(16.dp))
+                                    Text("Loading news...")
+                                }
+                            }
+                        }
 
-                    is ApiResponse.Error -> {
-                        LoadStatusText(
-                            modifier = Modifier,
-                            "Error loading data: ${(filteredNewsList as? ApiResponse.Error)?.message ?: "Unknown Error"}"
-                        )
-                    }
-
-                    else -> {
-                        if (searchKeyword.isNotEmpty()) {
-                            LoadStatusText(
-                                modifier = Modifier,
-                                "No results found for \"$searchKeyword\""
+                        is ApiResponse.Error -> {
+                            ErrorScreen(
+                                errorMessage = (filteredNewsList as ApiResponse.Error).message,
+                                onRetry = { viewModel.retryInitialLoad() }
                             )
                         }
+
+                        ApiResponse.Empty -> {
+                            EmptyStateScreen(
+                                message = if (searchKeyword.isNotEmpty()) {
+                                    "No results found for \"$searchKeyword\""
+                                } else {
+                                    "No news available at the moment"
+                                }
+                            )
+                        }
+
+                        else -> {
+                            if (searchKeyword.isNotEmpty()) {
+                                EmptyStateScreen(
+                                    message = "No results found for \"$searchKeyword\""
+                                )
+                            }
+                        }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyStateScreen(message: String) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Text(
+                text = "📰",
+                style = MaterialTheme.typography.displayLarge
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.Gray
+            )
+        }
+    }
+}
+
+@Composable
+fun ErrorScreen(
+    errorMessage: String,
+    onRetry: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Error",
+                modifier = Modifier
+                    .height(64.dp)
+                    .width(64.dp),
+                tint = Color.Gray
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Failed to Load",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = errorMessage,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Spacer(Modifier.height(24.dp))
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.fillMaxWidth(0.6f)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Retry"
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Retry")
+            }
+        }
+    }
+}
+
+@Composable
+fun PaginationErrorItem(
+    errorMessage: String,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = "Error",
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .height(32.dp)
+                    .width(32.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Failed to load more",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = errorMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Dismiss")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Retry",
+                        modifier = Modifier
+                            .height(18.dp)
+                            .width(18.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Retry")
                 }
             }
         }

@@ -16,7 +16,7 @@ class NewsRepositoryImpl @Inject constructor(private val apiService: ApiService)
             if (response.sources.isNotEmpty()) {
                 emit(ApiResponse.Success(response.sources))
             } else {
-                emit(ApiResponse.Error("No sources available now, please check after a while!"))
+                emit(ApiResponse.Empty)
             }
         } catch (exception: Exception) {
             emit(ApiResponse.Error(exception.message ?: "Unexpected Error"))
@@ -30,7 +30,7 @@ class NewsRepositoryImpl @Inject constructor(private val apiService: ApiService)
             if (response.articles.isNotEmpty()) {
                 emit(ApiResponse.Success(response.articles))
             } else {
-                emit(ApiResponse.Error("No news available now, please check after a while!"))
+                emit(ApiResponse.Empty)
             }
         } catch (exception: Exception) {
             emit(ApiResponse.Error(exception.message ?: "Unexpected Error"))

@@ -22,7 +22,6 @@ class SourceListViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val _sourceList = MutableStateFlow<ApiResponse<List<Source>>>(ApiResponse.Loading)
-    val sourceList = _sourceList.asStateFlow()
 
     private val _searchKeyword = MutableStateFlow("")
     val searchKeyword = _searchKeyword.asStateFlow()
@@ -31,9 +30,12 @@ class SourceListViewModel @Inject constructor(
         MutableStateFlow<ApiResponse<List<Source>>>(ApiResponse.Loading)
     val filteredSourceList = _filteredSourceList.asStateFlow()
 
+    private var currentCategory: String? = null
+
     init {
         val category = savedStateHandle.get<String>(EXTRA_CATEGORY_KEY)
         if (category != null) {
+            currentCategory = category
             fetchSourceList(category)
         }
 
@@ -73,11 +75,21 @@ class SourceListViewModel @Inject constructor(
             is ApiResponse.Loading -> {
                 _filteredSourceList.value = apiResponse
             }
+
+            ApiResponse.Empty -> {
+                _filteredSourceList.value = apiResponse
+            }
         }
+    }
+
+    fun retryLoad() {
+        val category = currentCategory ?: return
+        fetchSourceList(category)
     }
 
     private fun fetchSourceList(category: String) {
         viewModelScope.launch {
+            _sourceList.value = ApiResponse.Loading
             newsRepository.getSourceList(category).collect { response ->
                 _sourceList.value = response
             }
