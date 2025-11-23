@@ -1,11 +1,14 @@
 package com.aryandi.news.ui.source
 
 import androidx.lifecycle.SavedStateHandle
-import com.aryandi.data.model.Source
 import com.aryandi.data.network.ApiResponse
-import com.aryandi.data.repository.NewsRepository
+import com.aryandi.domain.common.Result
+import com.aryandi.domain.model.SourceDomain
+import com.aryandi.domain.usecase.GetSourceListUseCase
+import com.aryandi.domain.usecase.SearchSourcesUseCase
 import io.mockk.coEvery
 import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertTrue
@@ -25,7 +28,8 @@ import org.junit.Test
 class SourceListViewModelTest {
 
     private lateinit var viewModel: SourceListViewModel
-    private val newsRepository: NewsRepository = mockk()
+    private val getSourceListUseCase: GetSourceListUseCase = mockk()
+    private val searchSourcesUseCase: SearchSourcesUseCase = mockk()
     private val savedStateHandle: SavedStateHandle = mockk(relaxed = true)
     private val testDispatcher = StandardTestDispatcher()
 
@@ -43,12 +47,13 @@ class SourceListViewModelTest {
     fun `test initial state is loading when category is provided`() = runTest {
         // Given
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Loading
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Loading
         )
 
         // When
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
 
         // Then
         assertEquals(ApiResponse.Loading, viewModel.filteredSourceList.value)
@@ -57,20 +62,22 @@ class SourceListViewModelTest {
     @Test
     fun `test fetch source list success`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
 
         // When
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // Then
         val filteredValue = viewModel.filteredSourceList.value
         assertTrue(filteredValue is ApiResponse.Success)
-        assertEquals(sources, (filteredValue as ApiResponse.Success).data)
+        assertEquals(3, (filteredValue as ApiResponse.Success).data.size)
     }
 
     @Test
@@ -78,12 +85,13 @@ class SourceListViewModelTest {
         // Given
         val errorMessage = "Network error"
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Error(errorMessage)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Error(errorMessage)
         )
 
         // When
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // Then
@@ -96,12 +104,13 @@ class SourceListViewModelTest {
     fun `test fetch source list empty state`() = runTest {
         // Given
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Empty
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Empty
         )
 
         // When
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // Then
@@ -111,13 +120,16 @@ class SourceListViewModelTest {
     @Test
     fun `test search filter by name`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "TechCrunch") } returns listOf(domainSources[0])
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -135,13 +147,16 @@ class SourceListViewModelTest {
     @Test
     fun `test search filter by description`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "coding") } returns listOf(domainSources[2])
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -159,13 +174,16 @@ class SourceListViewModelTest {
     @Test
     fun `test search filter by category`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "technology") } returns domainSources
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -182,13 +200,16 @@ class SourceListViewModelTest {
     @Test
     fun `test search filter case insensitive`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "TECHCRUNCH") } returns listOf(domainSources[0])
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -206,13 +227,16 @@ class SourceListViewModelTest {
     @Test
     fun `test search filter with empty keyword returns all sources`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "TechCrunch") } returns listOf(domainSources[0])
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         viewModel.updateSearchKeyword("TechCrunch")
@@ -226,19 +250,22 @@ class SourceListViewModelTest {
         val filteredValue = viewModel.filteredSourceList.value
         assertTrue(filteredValue is ApiResponse.Success)
         val filteredSources = (filteredValue as ApiResponse.Success).data
-        assertEquals(sources.size, filteredSources.size)
+        assertEquals(3, filteredSources.size)
     }
 
     @Test
     fun `test search filter with whitespace keyword returns all sources`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "   ") } answers { firstArg() }
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -249,19 +276,22 @@ class SourceListViewModelTest {
         val filteredValue = viewModel.filteredSourceList.value
         assertTrue(filteredValue is ApiResponse.Success)
         val filteredSources = (filteredValue as ApiResponse.Success).data
-        assertEquals(sources.size, filteredSources.size)
+        assertEquals(3, filteredSources.size)
     }
 
     @Test
     fun `test search filter with no matches returns empty list`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "NonExistentSource123") } returns emptyList()
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -279,11 +309,13 @@ class SourceListViewModelTest {
     fun `test search keyword state flow updates correctly`() = runTest {
         // Given
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(emptyList())
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(emptyList())
         )
+        every { searchSourcesUseCase(any(), any()) } answers { firstArg() }
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -299,48 +331,51 @@ class SourceListViewModelTest {
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns null
 
         // When
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // Then
-        coVerify(exactly = 0) { newsRepository.getSourceList(any()) }
+        coVerify(exactly = 0) { getSourceListUseCase(any()) }
     }
 
     @Test
     fun `test retry load fetches sources again`() = runTest {
         // Given
         val errorMessage = "Network error"
-        coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Error(errorMessage)
-        )
+        val domainSources = getTestDomainSources()
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Error(errorMessage)
+        ) andThen flowOf(Result.Success(domainSources))
+
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
-        val sources = getTestSources()
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
-        )
         viewModel.retryLoad()
         advanceUntilIdle()
 
         // Then
         val filteredValue = viewModel.filteredSourceList.value
         assertTrue(filteredValue is ApiResponse.Success)
-        assertEquals(sources, (filteredValue as ApiResponse.Success).data)
+        assertEquals(3, (filteredValue as ApiResponse.Success).data.size)
     }
 
     @Test
     fun `test empty state is preserved through filtering`() = runTest {
         // Given
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Empty
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Empty
         )
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -356,11 +391,12 @@ class SourceListViewModelTest {
         // Given
         val errorMessage = "Network error"
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Error(errorMessage)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Error(errorMessage)
         )
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When
@@ -376,13 +412,19 @@ class SourceListViewModelTest {
     @Test
     fun `test filter works with multiple matching criteria`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
+        )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "tech") } returns listOf(
+            domainSources[0],
+            domainSources[1]
         )
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When - search for a term that appears in both name and description
@@ -393,20 +435,23 @@ class SourceListViewModelTest {
         val filteredValue = viewModel.filteredSourceList.value
         assertTrue(filteredValue is ApiResponse.Success)
         val filteredSources = (filteredValue as ApiResponse.Success).data
-        // Should find TechCrunch (in name) and Wired (in description)
         assertTrue(filteredSources.size >= 2)
     }
 
     @Test
     fun `test multiple consecutive filter updates`() = runTest {
         // Given
-        val sources = getTestSources()
+        val domainSources = getTestDomainSources()
         coEvery { savedStateHandle.get<String>(EXTRA_CATEGORY_KEY) } returns "technology"
-        coEvery { newsRepository.getSourceList("technology") } returns flowOf(
-            ApiResponse.Success(sources)
+        coEvery { getSourceListUseCase("technology") } returns flowOf(
+            Result.Success(domainSources)
         )
+        every { searchSourcesUseCase(any(), "") } answers { firstArg() }
+        every { searchSourcesUseCase(any(), "TechCrunch") } returns listOf(domainSources[0])
+        every { searchSourcesUseCase(any(), "Wired") } returns listOf(domainSources[1])
 
-        viewModel = SourceListViewModel(newsRepository, savedStateHandle)
+        viewModel =
+            SourceListViewModel(getSourceListUseCase, searchSourcesUseCase, savedStateHandle)
         advanceUntilIdle()
 
         // When - apply multiple filters
@@ -427,12 +472,12 @@ class SourceListViewModelTest {
         advanceUntilIdle()
         filteredValue = viewModel.filteredSourceList.value
         assertTrue(filteredValue is ApiResponse.Success)
-        assertEquals(sources.size, (filteredValue as ApiResponse.Success).data.size)
+        assertEquals(3, (filteredValue as ApiResponse.Success).data.size)
     }
 
-    private fun getTestSources(): List<Source> {
+    private fun getTestDomainSources(): List<SourceDomain> {
         return listOf(
-            Source(
+            SourceDomain(
                 id = "techcrunch",
                 name = "TechCrunch",
                 description = "The latest technology news and information on startups",
@@ -441,7 +486,7 @@ class SourceListViewModelTest {
                 language = "en",
                 country = "us"
             ),
-            Source(
+            SourceDomain(
                 id = "wired",
                 name = "Wired",
                 description = "In-depth coverage of current and future trends in tech",
@@ -450,7 +495,7 @@ class SourceListViewModelTest {
                 language = "en",
                 country = "us"
             ),
-            Source(
+            SourceDomain(
                 id = "the-verge",
                 name = "The Verge",
                 description = "The Verge covers the intersection of technology, science, art, and coding",

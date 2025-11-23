@@ -6,7 +6,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aryandi.data.model.Article
 import com.aryandi.data.network.ApiResponse
-import com.aryandi.data.repository.NewsRepository
+import com.aryandi.domain.model.ArticleDomain
+import com.aryandi.domain.usecase.GetPaginatedNewsUseCase
+import com.aryandi.domain.usecase.SearchNewsUseCase
+import com.aryandi.news.ui.mapper.toUi
+import com.aryandi.news.ui.mapper.toUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,7 +22,8 @@ const val EXTRA_SOURCE_KEY = "EXTRA_SOURCE"
 @Stable
 @HiltViewModel
 class NewsListViewModel @Inject constructor(
-    private val newsRepository: NewsRepository,
+    private val getPaginatedNewsUseCase: GetPaginatedNewsUseCase,
+    private val searchNewsUseCase: SearchNewsUseCase,
     savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val _newsList = MutableStateFlow<ApiResponse<List<Article>>>(ApiResponse.Loading)
@@ -62,18 +67,29 @@ class NewsListViewModel @Inject constructor(
     private fun applyFilter(apiResponse: ApiResponse<List<Article>>) {
         when (apiResponse) {
             is ApiResponse.Success -> {
-                val keyword = _searchKeyword.value.trim()
-                if (keyword.isEmpty()) {
-                    _filteredNewsList.value = apiResponse
-                } else {
-                    val filtered = apiResponse.data.filter { article ->
-                        article.title?.contains(keyword, ignoreCase = true) == true ||
-                                article.description?.contains(keyword, ignoreCase = true) == true ||
-                                article.author?.contains(keyword, ignoreCase = true) == true ||
-                                article.content?.contains(keyword, ignoreCase = true) == true
-                    }
-                    _filteredNewsList.value = ApiResponse.Success(filtered)
+                val keyword = _searchKeyword.value
+                val domainArticles = apiResponse.data.map { article ->
+                    // Convert UI model back to domain for filtering
+                    ArticleDomain(
+                        source = article.source?.let {
+                            ArticleDomain.SourceDomain(
+                                id = it.id,
+                                name = it.name
+                            )
+                        },
+                        author = article.author,
+                        title = article.title,
+                        description = article.description,
+                        url = article.url,
+                        urlToImage = article.urlToImage,
+                        publishedAt = article.publishedAt,
+                        content = article.content
+                    )
                 }
+
+                val filteredDomain = searchNewsUseCase(domainArticles, keyword)
+                val filteredUi = filteredDomain.toUi()
+                _filteredNewsList.value = ApiResponse.Success(filteredUi)
             }
 
             is ApiResponse.Error -> {
@@ -129,22 +145,49 @@ class NewsListViewModel @Inject constructor(
                 _newsList.value = ApiResponse.Loading
             }
 
-            newsRepository.getNewsList(
+            getPaginatedNewsUseCase(
                 source = source,
-                currentPage = currentPage
+                page = currentPage
             )
-                .collect { response ->
+                .collect { result ->
+                    val response = result.toUiState()
                     when (response) {
                         is ApiResponse.Success -> {
-                            val newItems = response.data
-                            val currentItems =
-                                if (isFirstLoad) emptyList() else (_newsList.value as? ApiResponse.Success)?.data
-                                    ?: emptyList()
+                            val newItemsDomain = response.data
 
-                            if (newItems.isEmpty()) {
+                            // Use use case to check if pagination should stop
+                            if (getPaginatedNewsUseCase.shouldStopPagination(newItemsDomain)) {
                                 isLastPage = true
                             } else {
-                                _newsList.value = ApiResponse.Success(currentItems + newItems)
+                                val currentItemsDomain = if (isFirstLoad) {
+                                    emptyList()
+                                } else {
+                                    (_newsList.value as? ApiResponse.Success)?.data?.map { article ->
+                                        ArticleDomain(
+                                            source = article.source?.let {
+                                                ArticleDomain.SourceDomain(
+                                                    id = it.id,
+                                                    name = it.name
+                                                )
+                                            },
+                                            author = article.author,
+                                            title = article.title,
+                                            description = article.description,
+                                            url = article.url,
+                                            urlToImage = article.urlToImage,
+                                            publishedAt = article.publishedAt,
+                                            content = article.content
+                                        )
+                                    } ?: emptyList()
+                                }
+
+                                // Use use case to merge lists
+                                val mergedDomain = getPaginatedNewsUseCase.mergeNewsLists(
+                                    currentItemsDomain,
+                                    newItemsDomain
+                                )
+
+                                _newsList.value = ApiResponse.Success(mergedDomain.toUi())
                                 currentPage++
                             }
                         }
@@ -163,6 +206,9 @@ class NewsListViewModel @Inject constructor(
                         }
 
                         ApiResponse.Empty -> {
+                            if (isFirstLoad) {
+                                _newsList.value = ApiResponse.Empty
+                            }
                         }
                     }
                     isLoadingMore = false

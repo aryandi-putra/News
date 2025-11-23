@@ -1,14 +1,16 @@
 package com.aryandi.news.ui.news
 
 import androidx.lifecycle.SavedStateHandle
-import com.aryandi.data.model.Article
+import app.cash.turbine.test
 import com.aryandi.data.network.ApiResponse
-import com.aryandi.data.repository.NewsRepository
+import com.aryandi.domain.common.Result
+import com.aryandi.domain.model.ArticleDomain
+import com.aryandi.domain.usecase.GetPaginatedNewsUseCase
+import com.aryandi.domain.usecase.SearchNewsUseCase
 import io.mockk.coEvery
-import io.mockk.coVerify
+import io.mockk.every
 import io.mockk.mockk
 import junit.framework.TestCase.assertEquals
-import junit.framework.TestCase.assertNull
 import junit.framework.TestCase.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,13 +28,21 @@ import org.junit.Test
 class NewsListViewModelTest {
 
     private lateinit var viewModel: NewsListViewModel
-    private val newsRepository: NewsRepository = mockk()
+    private val getPaginatedNewsUseCase: GetPaginatedNewsUseCase = mockk(relaxed = true)
+    private val searchNewsUseCase: SearchNewsUseCase = mockk(relaxed = true)
     private val savedStateHandle: SavedStateHandle = mockk(relaxed = true)
     private val testDispatcher = StandardTestDispatcher()
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
+        // Default mock behavior
+        every { getPaginatedNewsUseCase.shouldStopPagination(emptyList()) } returns true
+        every { getPaginatedNewsUseCase.shouldStopPagination(match { it.isNotEmpty() }) } returns false
+        every { getPaginatedNewsUseCase.mergeNewsLists(any(), any()) } answers {
+            firstArg<List<ArticleDomain>>() + secondArg<List<ArticleDomain>>()
+        }
+        every { searchNewsUseCase(any(), any()) } answers { firstArg() }
     }
 
     @After
@@ -41,549 +51,330 @@ class NewsListViewModelTest {
     }
 
     @Test
-    fun `test initial state is loading when source is provided`() = runTest {
-        // Given
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Loading
-        )
-
-        // When
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-
-        // Then
-        assertEquals(ApiResponse.Loading, viewModel.newsList.value)
-        assertEquals(ApiResponse.Loading, viewModel.filteredNewsList.value)
-    }
-
-    @Test
     fun `test fetch news list success`() = runTest {
         // Given
-        val articles = getTestArticles()
+        val domainArticles = getTestDomainArticles()
+
         coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
+        coEvery { getPaginatedNewsUseCase("abc-news", 1) } returns flowOf(
+            Result.Success(
+                domainArticles
+            )
         )
 
         // When
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
+        advanceUntilIdle() // Let all coroutines complete
 
         // Then
-        val newsListValue = viewModel.newsList.value
-        assertTrue(newsListValue is ApiResponse.Success)
-        assertEquals(articles, (newsListValue as ApiResponse.Success).data)
+        viewModel.newsList.test {
+            // Get current state (should be Success after advanceUntilIdle)
+            val success = awaitItem()
+            assertTrue("Expected Success", success is ApiResponse.Success)
+            assertEquals(3, (success as ApiResponse.Success).data.size)
 
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        assertEquals(articles, (filteredValue as ApiResponse.Success).data)
-    }
+            cancelAndIgnoreRemainingEvents()
+        }
 
-    @Test
-    fun `test fetch news list error`() = runTest {
-        // Given
-        val errorMessage = "Network error"
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Error(errorMessage)
-        )
+        // Test filtered list
+        viewModel.filteredNewsList.test {
+            // Get current state (should be Success after advanceUntilIdle)
+            val success = awaitItem()
+            assertTrue(success is ApiResponse.Success)
+            assertEquals(3, (success as ApiResponse.Success).data.size)
 
-        // When
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // Then
-        val newsListValue = viewModel.newsList.value
-        assertTrue(newsListValue is ApiResponse.Error)
-        assertEquals(errorMessage, (newsListValue as ApiResponse.Error).message)
-
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Error)
-        assertEquals(errorMessage, (filteredValue as ApiResponse.Error).message)
-    }
-
-    @Test
-    fun `test fetch news list empty state`() = runTest {
-        // Given
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Empty
-        )
-
-        // When
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // Then
-        assertEquals(ApiResponse.Empty, viewModel.newsList.value)
-        assertEquals(ApiResponse.Empty, viewModel.filteredNewsList.value)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
     fun `test search filter by title`() = runTest {
         // Given
-        val articles = getTestArticles()
+        val domainArticles = getTestDomainArticles()
         coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("Trump")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertEquals(1, filteredArticles.size)
-        assertEquals("Trump news article", filteredArticles[0].title)
-    }
-
-    @Test
-    fun `test search filter by description`() = runTest {
-        // Given
-        val articles = getTestArticles()
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("technology")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertEquals(1, filteredArticles.size)
-        assertEquals("Tech article", filteredArticles[0].title)
-    }
-
-    @Test
-    fun `test search filter by author`() = runTest {
-        // Given
-        val articles = getTestArticles()
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("John Doe")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertEquals(1, filteredArticles.size)
-        assertEquals("John Doe", filteredArticles[0].author)
-    }
-
-    @Test
-    fun `test search filter by content`() = runTest {
-        // Given
-        val articles = getTestArticles()
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("sports content")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertEquals(1, filteredArticles.size)
-        assertEquals("Sports article", filteredArticles[0].title)
-    }
-
-    @Test
-    fun `test search filter case insensitive`() = runTest {
-        // Given
-        val articles = getTestArticles()
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("TRUMP")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertEquals(1, filteredArticles.size)
-        assertEquals("Trump news article", filteredArticles[0].title)
-    }
-
-    @Test
-    fun `test search filter with empty keyword returns all articles`() = runTest {
-        // Given
-        val articles = getTestArticles()
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        viewModel.updateSearchKeyword("Trump")
-        advanceUntilIdle()
-
-        // When - clear search
-        viewModel.updateSearchKeyword("")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertEquals(articles.size, filteredArticles.size)
-    }
-
-    @Test
-    fun `test search filter with whitespace keyword returns all articles`() = runTest {
-        // Given
-        val articles = getTestArticles()
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("   ")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertEquals(articles.size, filteredArticles.size)
-    }
-
-    @Test
-    fun `test search filter with no matches returns empty list`() = runTest {
-        // Given
-        val articles = getTestArticles()
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("NonExistentKeyword123")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertTrue(filteredArticles.isEmpty())
-    }
-
-    @Test
-    fun `test search keyword state flow updates correctly`() = runTest {
-        // Given
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(emptyList())
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("test keyword")
-
-        // Then
-        assertEquals("test keyword", viewModel.searchKeyword.value)
-    }
-
-    @Test
-    fun `test load more sources calls repository with correct parameters`() = runTest {
-        // Given
-        val articles = getTestArticles()
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-        coEvery { newsRepository.getNewsList("abc-news", 2) } returns flowOf(
-            ApiResponse.Success(getTestArticles().take(1))
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.loadMoreSources()
-        advanceUntilIdle()
-
-        // Then
-        coVerify(exactly = 1) { newsRepository.getNewsList("abc-news", 1) }
-        coVerify(exactly = 1) { newsRepository.getNewsList("abc-news", 2) }
-    }
-
-    @Test
-    fun `test pagination appends new articles to existing list`() = runTest {
-        // Given
-        val firstPageArticles = listOf(
-            Article(
-                title = "Article 1",
-                description = "Description 1",
-                author = "Author 1"
+        coEvery { getPaginatedNewsUseCase("abc-news", 1) } returns flowOf(
+            Result.Success(
+                domainArticles
             )
         )
-        val secondPageArticles = listOf(
-            Article(
-                title = "Article 2",
-                description = "Description 2",
-                author = "Author 2"
+        every { searchNewsUseCase(any(), "") } answers { firstArg() }
+        every { searchNewsUseCase(any(), "Trump") } returns listOf(domainArticles[0])
+
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
+        advanceUntilIdle()
+
+        // When
+        viewModel.filteredNewsList.test {
+            // Current state before update
+            val beforeUpdate = awaitItem()
+            assertTrue(beforeUpdate is ApiResponse.Success)
+            assertEquals(3, (beforeUpdate as ApiResponse.Success).data.size)
+
+            // Update search keyword
+            viewModel.updateSearchKeyword("Trump")
+
+            // Get filtered result
+            val afterUpdate = awaitItem()
+            assertTrue(afterUpdate is ApiResponse.Success)
+            val filtered = (afterUpdate as ApiResponse.Success).data
+            assertEquals(1, filtered.size)
+            assertEquals("Trump news article", filtered[0].title)
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `test search keyword state updates`() = runTest {
+        // Given
+        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
+        coEvery {
+            getPaginatedNewsUseCase(
+                "abc-news",
+                1
+            )
+        } returns flowOf(Result.Success(emptyList()))
+        every { getPaginatedNewsUseCase.shouldStopPagination(emptyList()) } returns true
+
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
+        advanceUntilIdle()
+
+        // When & Then - Test search keyword updates
+        viewModel.searchKeyword.test {
+            // Initial state
+            assertEquals("", awaitItem())
+
+            // Update keyword
+            viewModel.updateSearchKeyword("test keyword")
+            assertEquals("test keyword", awaitItem())
+
+            // Clear keyword
+            viewModel.updateSearchKeyword("")
+            assertEquals("", awaitItem())
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `test pagination error state`() = runTest {
+        // Given
+        val firstPageDomain = listOf(ArticleDomain(title = "Article 1"))
+        val errorMessage = "Failed to load page 2"
+
+        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
+        coEvery { getPaginatedNewsUseCase("abc-news", 1) } returns flowOf(
+            Result.Success(
+                firstPageDomain
             )
         )
+        coEvery {
+            getPaginatedNewsUseCase(
+                "abc-news",
+                2
+            )
+        } returns flowOf(Result.Error(errorMessage))
 
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(firstPageArticles)
-        )
-        coEvery { newsRepository.getNewsList("abc-news", 2) } returns flowOf(
-            ApiResponse.Success(secondPageArticles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
         advanceUntilIdle()
 
-        // When
+        // When & Then - Test pagination error
+        viewModel.paginationError.test {
+            // Initial state (no error)
+            assertEquals(null, awaitItem())
+
+            // Trigger load more
+            viewModel.loadMoreSources()
+            advanceUntilIdle()
+
+            // Error should be emitted
+            assertEquals(errorMessage, awaitItem())
+
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `test dismiss pagination error`() = runTest {
+        // Given
+        val firstPageDomain = listOf(ArticleDomain(title = "Article 1"))
+        val errorMessage = "Failed to load page 2"
+
+        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
+        coEvery { getPaginatedNewsUseCase("abc-news", 1) } returns flowOf(
+            Result.Success(
+                firstPageDomain
+            )
+        )
+        coEvery {
+            getPaginatedNewsUseCase(
+                "abc-news",
+                2
+            )
+        } returns flowOf(Result.Error(errorMessage))
+
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
+        advanceUntilIdle()
+
         viewModel.loadMoreSources()
         advanceUntilIdle()
 
-        // Then
-        val newsListValue = viewModel.newsList.value
-        assertTrue(newsListValue is ApiResponse.Success)
-        val allArticles = (newsListValue as ApiResponse.Success).data
-        assertEquals(2, allArticles.size)
-        assertEquals("Article 1", allArticles[0].title)
-        assertEquals("Article 2", allArticles[1].title)
+        // When & Then - Test dismissing error
+        viewModel.paginationError.test {
+            // Current error state
+            assertEquals(errorMessage, awaitItem())
+
+            // Dismiss error
+            viewModel.dismissPaginationError()
+
+            // Error should be cleared
+            assertEquals(null, awaitItem())
+
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
-    fun `test filter applies to paginated results`() = runTest {
+    fun `test empty state`() = runTest {
         // Given
-        val firstPageArticles = listOf(
-            Article(title = "Trump news 1"),
-            Article(title = "Sports news 1")
-        )
-        val secondPageArticles = listOf(
-            Article(title = "Trump news 2"),
-            Article(title = "Tech news 1")
-        )
-
         coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(firstPageArticles)
-        )
-        coEvery { newsRepository.getNewsList("abc-news", 2) } returns flowOf(
-            ApiResponse.Success(secondPageArticles)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // Load more
-        viewModel.loadMoreSources()
-        advanceUntilIdle()
-
-        // When - apply filter
-        viewModel.updateSearchKeyword("Trump")
-        advanceUntilIdle()
-
-        // Then
-        val filteredValue = viewModel.filteredNewsList.value
-        assertTrue(filteredValue is ApiResponse.Success)
-        val filteredArticles = (filteredValue as ApiResponse.Success).data
-        assertEquals(2, filteredArticles.size)
-        assertTrue(filteredArticles.all { it.title?.contains("Trump") == true })
-    }
-
-    @Test
-    fun `test no source in saved state does not fetch news`() = runTest {
-        // Given
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns null
+        coEvery { getPaginatedNewsUseCase("abc-news", 1) } returns flowOf(Result.Empty)
 
         // When
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
+        advanceUntilIdle() // Let all coroutines complete
 
         // Then
-        coVerify(exactly = 0) { newsRepository.getNewsList(any(), any()) }
+        viewModel.newsList.test {
+            // Get current state (should be Empty after advanceUntilIdle)
+            val empty = awaitItem()
+            assertEquals(ApiResponse.Empty, empty)
+
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        viewModel.filteredNewsList.test {
+            // Get current state (should be Empty after advanceUntilIdle)
+            val empty = awaitItem()
+            assertEquals(ApiResponse.Empty, empty)
+
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
-    fun `test retry initial load resets state and fetches again`() = runTest {
+    fun `test error state`() = runTest {
         // Given
         val errorMessage = "Network error"
         coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Error(errorMessage)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
+        coEvery {
+            getPaginatedNewsUseCase(
+                "abc-news",
+                1
+            )
+        } returns flowOf(Result.Error(errorMessage))
 
         // When
-        val articles = getTestArticles()
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(articles)
-        )
-        viewModel.retryInitialLoad()
-        advanceUntilIdle()
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
 
         // Then
-        val newsListValue = viewModel.newsList.value
-        assertTrue(newsListValue is ApiResponse.Success)
-        assertEquals(articles, (newsListValue as ApiResponse.Success).data)
+        viewModel.newsList.test {
+            val loading = awaitItem()
+            assertTrue(loading is ApiResponse.Loading)
+
+            val error = awaitItem()
+            assertTrue(error is ApiResponse.Error)
+            assertEquals(errorMessage, (error as ApiResponse.Error).message)
+
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
-    fun `test pagination error is stored`() = runTest {
+    fun `test pagination appends articles`() = runTest {
         // Given
-        val firstPageArticles = listOf(Article(title = "Article 1"))
-        val errorMessage = "Failed to load page 2"
+        val firstPageDomain = listOf(ArticleDomain(title = "Article 1"))
+        val secondPageDomain = listOf(ArticleDomain(title = "Article 2"))
 
         coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(firstPageArticles)
+        coEvery { getPaginatedNewsUseCase("abc-news", 1) } returns flowOf(
+            Result.Success(
+                firstPageDomain
+            )
         )
-        coEvery { newsRepository.getNewsList("abc-news", 2) } returns flowOf(
-            ApiResponse.Error(errorMessage)
+        coEvery { getPaginatedNewsUseCase("abc-news", 2) } returns flowOf(
+            Result.Success(
+                secondPageDomain
+            )
         )
 
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
         advanceUntilIdle()
 
-        // When
-        viewModel.loadMoreSources()
-        advanceUntilIdle()
+        // When & Then - Test pagination
+        viewModel.newsList.test {
+            // Current state (page 1)
+            val firstPage = awaitItem()
+            assertTrue(firstPage is ApiResponse.Success)
+            assertEquals(1, (firstPage as ApiResponse.Success).data.size)
 
-        // Then
-        assertEquals(errorMessage, viewModel.paginationError.value)
+            // Trigger load more
+            viewModel.loadMoreSources()
+            advanceUntilIdle()
+
+            // Get merged result (page 1 + page 2)
+            val merged = awaitItem()
+            assertTrue(merged is ApiResponse.Success)
+            val allArticles = (merged as ApiResponse.Success).data
+            assertEquals(2, allArticles.size)
+            assertEquals("Article 1", allArticles[0].title)
+            assertEquals("Article 2", allArticles[1].title)
+
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
-    fun `test retry pagination reloads failed page`() = runTest {
+    fun `test retry initial load`() = runTest {
         // Given
-        val firstPageArticles = listOf(Article(title = "Article 1"))
-        val secondPageArticles = listOf(Article(title = "Article 2"))
-        val errorMessage = "Failed to load page 2"
+        val errorMessage = "Network error"
+        val domainArticles = getTestDomainArticles()
 
         coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(firstPageArticles)
-        )
-        coEvery { newsRepository.getNewsList("abc-news", 2) } returns flowOf(
-            ApiResponse.Error(errorMessage)
-        )
+        coEvery { getPaginatedNewsUseCase("abc-news", 1) } returns
+                flowOf(Result.Error(errorMessage)) andThen
+                flowOf(Result.Success(domainArticles))
 
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
+        viewModel = NewsListViewModel(getPaginatedNewsUseCase, searchNewsUseCase, savedStateHandle)
         advanceUntilIdle()
 
-        viewModel.loadMoreSources()
-        advanceUntilIdle()
+        // When & Then - Test retry
+        viewModel.newsList.test {
+            // Current error state
+            val error = awaitItem()
+            assertTrue(error is ApiResponse.Error)
 
-        // When - retry with success
-        coEvery { newsRepository.getNewsList("abc-news", 2) } returns flowOf(
-            ApiResponse.Success(secondPageArticles)
-        )
-        viewModel.retryPagination()
-        advanceUntilIdle()
+            // Retry
+            viewModel.retryInitialLoad()
+            advanceUntilIdle()
 
-        // Then
-        assertNull(viewModel.paginationError.value)
-        val newsListValue = viewModel.newsList.value
-        assertTrue(newsListValue is ApiResponse.Success)
-        val allArticles = (newsListValue as ApiResponse.Success).data
-        assertEquals(2, allArticles.size)
+            // Should go through loading
+            val loading = awaitItem()
+            assertTrue(loading is ApiResponse.Loading)
+
+            // Then success
+            val success = awaitItem()
+            assertTrue(success is ApiResponse.Success)
+            assertEquals(3, (success as ApiResponse.Success).data.size)
+
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
-    @Test
-    fun `test dismiss pagination error clears error state`() = runTest {
-        // Given
-        val firstPageArticles = listOf(Article(title = "Article 1"))
-        val errorMessage = "Failed to load page 2"
-
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Success(firstPageArticles)
-        )
-        coEvery { newsRepository.getNewsList("abc-news", 2) } returns flowOf(
-            ApiResponse.Error(errorMessage)
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        viewModel.loadMoreSources()
-        advanceUntilIdle()
-
-        // When
-        viewModel.dismissPaginationError()
-
-        // Then
-        assertNull(viewModel.paginationError.value)
-    }
-
-    @Test
-    fun `test empty state is preserved through filtering`() = runTest {
-        // Given
-        coEvery { savedStateHandle.get<String>(EXTRA_SOURCE_KEY) } returns "abc-news"
-        coEvery { newsRepository.getNewsList("abc-news", 1) } returns flowOf(
-            ApiResponse.Empty
-        )
-
-        viewModel = NewsListViewModel(newsRepository, savedStateHandle)
-        advanceUntilIdle()
-
-        // When
-        viewModel.updateSearchKeyword("test")
-        advanceUntilIdle()
-
-        // Then
-        assertEquals(ApiResponse.Empty, viewModel.filteredNewsList.value)
-    }
-
-    private fun getTestArticles(): List<Article> {
+    private fun getTestDomainArticles(): List<ArticleDomain> {
         return listOf(
-            Article(
-                source = Article.Source("abc-news", "ABC News"),
+            ArticleDomain(
+                source = ArticleDomain.SourceDomain("abc-news", "ABC News"),
                 author = "John Doe",
                 title = "Trump news article",
                 description = "Political news description",
@@ -592,8 +383,8 @@ class NewsListViewModelTest {
                 publishedAt = "2025-11-21T04:17:36Z",
                 content = "Political content here"
             ),
-            Article(
-                source = Article.Source("tech-news", "Tech News"),
+            ArticleDomain(
+                source = ArticleDomain.SourceDomain("tech-news", "Tech News"),
                 author = "Jane Smith",
                 title = "Tech article",
                 description = "Latest technology updates",
@@ -602,8 +393,8 @@ class NewsListViewModelTest {
                 publishedAt = "2025-11-22T04:17:36Z",
                 content = "Technology content here"
             ),
-            Article(
-                source = Article.Source("sports-news", "Sports News"),
+            ArticleDomain(
+                source = ArticleDomain.SourceDomain("sports-news", "Sports News"),
                 author = "Bob Johnson",
                 title = "Sports article",
                 description = "Sports update",

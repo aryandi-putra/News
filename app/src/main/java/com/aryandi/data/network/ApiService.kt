@@ -7,9 +7,10 @@ import retrofit2.http.GET
 import retrofit2.http.Query
 
 interface ApiService {
-    @GET("top-headlines/sources?country=us")
+    @GET("top-headlines/sources")
     suspend fun getSources(
         @Query(value ="category") category: String,
+        @Query(value ="country") country: String = "us",
         @Query(value ="language") language: String = "en",
         @Query(value ="apiKey") key: String = BuildConfig.TOKEN_KEY,
     ): SourcesList
