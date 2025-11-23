@@ -6,7 +6,6 @@ import com.aryandi.data.network.ApiResponse
 import com.aryandi.data.network.ApiService
 import com.aryandi.data.repository.NewsRepository
 import com.aryandi.data.repository.NewsRepositoryImpl
-import com.aryandi.news.BuildConfig
 import io.mockk.coEvery
 import io.mockk.mockk
 import junit.framework.TestCase.assertEquals
@@ -27,7 +26,7 @@ class NewsRepositoryImplTest {
 
     @Test
     fun testResponseSuccess() = runTest {
-        coEvery { apiService.getNewsBySource("abc-news", BuildConfig.TOKEN_KEY, ) } returns (getSuccessData())
+        coEvery { apiService.getNewsBySource("abc-news") } returns (getSuccessData())
         val response = repository.getNewsList("abc-news")
 
         assertEquals(ApiResponse.Success(getSuccessData().articles), response.last())
@@ -35,7 +34,7 @@ class NewsRepositoryImplTest {
 
     @Test
     fun testEmptyResponseErrorMessage() = runTest {
-        coEvery { apiService.getNewsBySource(source = "abc-news", key = BuildConfig.TOKEN_KEY) } returns (getEmptyData())
+        coEvery { apiService.getNewsBySource(source = "abc-news") } returns (getEmptyData())
         val response = repository.getNewsList(source = "abc-news")
 
         assertEquals(ApiResponse.Error("No news available now, please check after a while!"), response.last())
@@ -43,7 +42,7 @@ class NewsRepositoryImplTest {
 
     @Test
     fun testNullResponseMessage() = runTest {
-        coEvery { apiService.getNewsBySource(source = "abc-news", key = BuildConfig.TOKEN_KEY) } throws (NullPointerException())
+        coEvery { apiService.getNewsBySource(source = "abc-news") } throws (NullPointerException())
         val response = repository.getNewsList(source = "abc-news")
 
         assertEquals(ApiResponse.Error("Unexpected Error"), response.last())
