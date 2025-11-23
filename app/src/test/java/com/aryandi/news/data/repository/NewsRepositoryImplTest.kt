@@ -26,24 +26,24 @@ class NewsRepositoryImplTest {
 
     @Test
     fun testResponseSuccess() = runTest {
-        coEvery { apiService.getNewsBySource("abc-news") } returns (getSuccessData())
-        val response = repository.getNewsList("abc-news")
+        coEvery { apiService.getNewsBySource("abc-news", page = 1) } returns (getSuccessData())
+        val response = repository.getNewsList("abc-news", currentPage = 1)
 
         assertEquals(ApiResponse.Success(getSuccessData().articles), response.last())
     }
 
     @Test
     fun testEmptyResponseErrorMessage() = runTest {
-        coEvery { apiService.getNewsBySource(source = "abc-news") } returns (getEmptyData())
-        val response = repository.getNewsList(source = "abc-news")
+        coEvery { apiService.getNewsBySource(source = "abc-news", page = 1) } returns (getEmptyData())
+        val response = repository.getNewsList(source = "abc-news", currentPage = 1)
 
         assertEquals(ApiResponse.Error("No news available now, please check after a while!"), response.last())
     }
 
     @Test
     fun testNullResponseMessage() = runTest {
-        coEvery { apiService.getNewsBySource(source = "abc-news") } throws (NullPointerException())
-        val response = repository.getNewsList(source = "abc-news")
+        coEvery { apiService.getNewsBySource(source = "abc-news", page = 1) } throws (NullPointerException())
+        val response = repository.getNewsList(source = "abc-news", currentPage = 1)
 
         assertEquals(ApiResponse.Error("Unexpected Error"), response.last())
     }

@@ -9,13 +9,16 @@ import retrofit2.http.Query
 interface ApiService {
     @GET("top-headlines/sources?country=us")
     suspend fun getSources(
-        @Query("category") category: String,
-        @Query("apiKey") key: String = BuildConfig.TOKEN_KEY
+        @Query(value ="category") category: String,
+        @Query(value ="language") language: String = "en",
+        @Query(value ="apiKey") key: String = BuildConfig.TOKEN_KEY,
     ): SourcesList
 
     @GET("top-headlines")
     suspend fun getNewsBySource(
         @Query(value = "sources") source: String,
-        @Query("apiKey") key: String = BuildConfig.TOKEN_KEY
+        @Query(value ="page") page: Int = 1,
+        @Query(value ="pageSize") pageSize: Int = 5,
+        @Query(value ="apiKey") key: String = BuildConfig.TOKEN_KEY
     ): NewsList
 }

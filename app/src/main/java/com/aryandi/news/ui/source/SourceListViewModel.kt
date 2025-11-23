@@ -19,7 +19,7 @@ const val EXTRA_CATEGORY_KEY = "EXTRA_CATEGORY"
 @HiltViewModel
 class SourceListViewModel @Inject constructor(
     private val newsRepository: NewsRepository,
-    private val savedStateHandle: SavedStateHandle
+    savedStateHandle: SavedStateHandle
 ) : ViewModel() {
     private val _sourceList = MutableStateFlow<ApiResponse<List<Source>>>(ApiResponse.Loading)
     val sourceList = _sourceList.asStateFlow()

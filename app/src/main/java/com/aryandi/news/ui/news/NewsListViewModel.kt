@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.collections.plus
 
 const val EXTRA_SOURCE_KEY = "EXTRA_SOURCE"
 
@@ -24,18 +25,70 @@ class NewsListViewModel @Inject constructor(
     private val _newsList = MutableStateFlow<ApiResponse<List<Article>>>(ApiResponse.Loading)
     val newsList = _newsList.asStateFlow()
 
+    private var currentPage = 1
+    private var isLastPage = false
+    private var isLoadingMore = false
+    private var currentSource: String? = null
+
     init {
         val source = savedStateHandle.get<String>(EXTRA_SOURCE_KEY)
         if (source != null) {
-            fetchNewsList(source)
+            currentSource = source
+            fetchNewsList(source = source, isFirstLoad = true)
         }
     }
 
-    private fun fetchNewsList(source: String) {
+    fun loadMoreSources() {
+        val source = currentSource ?: return
+        if (!isLoadingMore && !isLastPage) {
+            fetchNewsList(source, isFirstLoad = false)
+        }
+    }
+
+
+    private fun fetchNewsList(source: String, isFirstLoad: Boolean) {
         viewModelScope.launch {
-            newsRepository.getNewsList(source).collect { response ->
-                _newsList.value = response
+            isLoadingMore = true
+
+            // If it's the first load, show main loading state
+            if (isFirstLoad) {
+                _newsList.value = ApiResponse.Loading
             }
+
+            newsRepository.getNewsList(
+                source = source,
+                currentPage = currentPage
+            )
+                .collect { response ->
+                    when (response) {
+                        is ApiResponse.Success -> {
+                            val newItems = response.data
+                            val currentItems =
+                                if (isFirstLoad) emptyList() else (_newsList.value as? ApiResponse.Success)?.data
+                                    ?: emptyList()
+
+                            if (newItems.isEmpty()) {
+                                isLastPage = true
+                            } else {
+                                _newsList.value = ApiResponse.Success(currentItems + newItems)
+                                currentPage++
+                            }
+                        }
+
+                        is ApiResponse.Error -> {
+                            if (isFirstLoad) {
+                                _newsList.value = response
+                            } else {
+                                // Optional: Handle pagination error (e.g., show snackbar)
+                            }
+                        }
+
+                        is ApiResponse.Loading -> {
+                            // Do nothing here as we handle loading flags manually for pagination
+                        }
+                    }
+                    isLoadingMore = false
+                }
         }
     }
 }

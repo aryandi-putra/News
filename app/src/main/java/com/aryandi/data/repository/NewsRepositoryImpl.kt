@@ -23,10 +23,10 @@ class NewsRepositoryImpl @Inject constructor(private val apiService: ApiService)
         }
     }
 
-    override suspend fun getNewsList(source: String): Flow<ApiResponse<List<Article>>> = flow {
+    override suspend fun getNewsList(source: String, currentPage: Int): Flow<ApiResponse<List<Article>>> = flow {
         emit(ApiResponse.Loading)
         try {
-            val response = apiService.getNewsBySource(source = source)
+            val response = apiService.getNewsBySource(source = source, page = currentPage)
             if (response.articles.isNotEmpty()) {
                 emit(ApiResponse.Success(response.articles))
             } else {

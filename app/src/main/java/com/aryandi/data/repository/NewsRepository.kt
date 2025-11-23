@@ -7,5 +7,5 @@ import kotlinx.coroutines.flow.Flow
 
 interface NewsRepository {
     suspend fun getSourceList(category: String): Flow<ApiResponse<List<Source>>>
-    suspend fun getNewsList(source: String): Flow<ApiResponse<List<Article>>>
+    suspend fun getNewsList(source: String, currentPage: Int): Flow<ApiResponse<List<Article>>>
 }
