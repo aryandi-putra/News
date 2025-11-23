@@ -12,6 +12,9 @@ interface ApiService {
         @Query("apiKey") key: String
     ): SourcesList
 
-    @GET("top-headlines?country=us&category=technology")
-    suspend fun getNewsBySource(@Query("apiKey") key: String): NewsList
+    @GET("top-headlines")
+    suspend fun getNewsBySource(
+        @Query(value = "sources") source: String,
+        @Query("apiKey") key: String,
+    ): NewsList
 }

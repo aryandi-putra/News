@@ -1,6 +1,7 @@
 package com.aryandi.news.ui.news
 
 import androidx.compose.runtime.Stable
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aryandi.data.model.Article
@@ -12,20 +13,27 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+const val EXTRA_SOURCE_KEY = "EXTRA_SOURCE"
+
 @Stable
 @HiltViewModel
-class NewsListViewModel @Inject constructor(private val newsRepository: NewsRepository) :
-    ViewModel() {
+class NewsListViewModel @Inject constructor(
+    private val newsRepository: NewsRepository,
+    private val savedStateHandle: SavedStateHandle
+) : ViewModel() {
     private val _newsList = MutableStateFlow<ApiResponse<List<Article>>>(ApiResponse.Loading)
     val newsList = _newsList.asStateFlow()
 
     init {
-        fetchNewsList()
+        val source = savedStateHandle.get<String>(EXTRA_SOURCE_KEY)
+        if (source != null) {
+            fetchNewsList(source)
+        }
     }
 
-    private fun fetchNewsList() {
+    private fun fetchNewsList(source: String) {
         viewModelScope.launch {
-            newsRepository.getNewsList().collect { response ->
+            newsRepository.getNewsList(source).collect { response ->
                 _newsList.value = response
             }
         }
