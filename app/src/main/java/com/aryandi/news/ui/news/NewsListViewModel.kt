@@ -50,7 +50,6 @@ class NewsListViewModel @Inject constructor(
         viewModelScope.launch {
             isLoadingMore = true
 
-            // If it's the first load, show main loading state
             if (isFirstLoad) {
                 _newsList.value = ApiResponse.Loading
             }
@@ -79,12 +78,10 @@ class NewsListViewModel @Inject constructor(
                             if (isFirstLoad) {
                                 _newsList.value = response
                             } else {
-                                // Optional: Handle pagination error (e.g., show snackbar)
                             }
                         }
 
                         is ApiResponse.Loading -> {
-                            // Do nothing here as we handle loading flags manually for pagination
                         }
                     }
                     isLoadingMore = false

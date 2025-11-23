@@ -31,6 +31,9 @@
         <activity
             android:name=".ui.source.SourceListActivity"
             android:exported="true" />
+        <activity
+            android:name=".ui.newsdetail.NewsDetailActivity"
+            android:exported="true" />
     </application>
 
 </manifest>
